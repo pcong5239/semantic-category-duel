@@ -2,8 +2,9 @@
 Bạn là Claude trong vai trò frontend presentation specialist cho một Build GenLayer đã có functional baseline. Đây là manual user handoff; hãy làm trực tiếp trong project local được chỉ định, không tạo project khác.
 
 PROJECT: E:\Genlayer-Projects\semantic-category-duel
-IMPLEMENTED REVISION: 2603936670f23caa98a3e9ccd1008e7766d3a2a8
-APPROVED PRODUCT SLICE: Semantic Category Duel — game công khai giữa hai wallet, sáu lượt nối từ; contract quyết định authority/turn/link/repeat/pass/resign/history/scoring, GenLayer validators chỉ phân loại word/category membership.
+IMPLEMENTED REVISION: 93b96b33289c5f8160292c5242c90b2f0d608fab
+CLAUDE_DESIGN_ITERATION: presentation-layer-v1
+SPECIFICATION: Semantic Category Duel — game công khai giữa hai wallet, sáu lượt nối từ; contract quyết định authority/turn/link/repeat/pass/resign/history/scoring, GenLayer validators chỉ phân loại word/category membership.
 
 Trước khi sửa, bắt buộc đọc đầy đủ:
 - E:\Genlayer-Projects\semantic-category-duel\RESEARCH-HANDOFF.md
@@ -29,7 +30,7 @@ ALLOWED FILES:
 - frontend/index.html: title/meta/favicon presentation-only nếu cần
 - Có thể tạo tối đa các asset presentation local dưới frontend/public/; không dùng remote runtime assets ngoài font hiện tại.
 
-FORBIDDEN:
+FORBIDDEN FILES AND ACTIONS:
 - Không sửa contracts/, tests/, docs/, package.json, package-lock.json, vite.config.ts, tsconfig.json, .gitignore hoặc governance.
 - Không sửa frontend/src/contract.ts, pending.ts, wallet.ts, types.ts, main.tsx.
 - Không thêm dependency, router, analytics, backend, API, chain call, wallet, transaction, polling, cache hoặc storage logic.
@@ -38,7 +39,7 @@ FORBIDDEN:
 - Không commit, push, deploy hay gửi dữ liệu ra ngoài.
 - Nếu có ambiguity ảnh hưởng architecture/scope/non-frontend logic, dừng và báo, không tự quyết.
 
-REQUIRED ACCEPTANCE:
+ACCEPTANCE CRITERIA:
 - Responsive ở desktop và mobile; không overflow; keyboard/focus rõ; reduced-motion giữ meaning.
 - Wallet selector chỉ render wallet thực sự detected; fresh load vẫn disconnected.
 - Transaction indicator vẫn có đủ literal phase mapping hiện tại, visible text + spinner khi pending, terminal states dừng spinner, `data-transaction-phase`, live region và alert semantics.
@@ -53,5 +54,5 @@ RETURN PACKAGE:
 4. Lệnh và kết quả test/build/browser verification.
 5. Các giới hạn/cảnh báo còn lại.
 
-Claude output không phải approval hoặc test evidence. Codex sẽ review và tích hợp bounded diff.
+Output của bạn không phải approval hoặc test evidence. Codex sẽ review và tích hợp bounded diff.
 ```
