@@ -1,5 +1,3 @@
-# Claude frontend redesign prompt
-
 ```text
 Bạn là Claude trong vai trò frontend presentation specialist cho một Build GenLayer đã có functional baseline. Đây là manual user handoff; hãy làm trực tiếp trong project local được chỉ định, không tạo project khác.
 
