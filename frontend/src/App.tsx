@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { contractAddress, idByNonce, readGame, type Calldata, type TxPhase, writeAndVerify } from './contract';
-import type { Address, Game } from './types';
-import { discoverLegacy, initialWallet, optionFromAnnouncement, walletReducer, type WalletOption } from './wallet';
+import type { Calldata } from './contract';
+import { contractAddress } from './config';
+import { terminalTxPhase, type Address, type Game, type TxPhase } from './types';
+import { bindProviderEvents, discoverLegacy, initialWallet, optionFromAnnouncement, walletReducer, type WalletOption } from './wallet';
+import { loadJournal, type JournalRecord } from './pending';
 
 const short = (value?: string) => value ? `${value.slice(0, 6)}…${value.slice(-4)}` : '';
-export const terminalTxPhase = (phase: TxPhase) => ['SUCCESS', 'REJECTED', 'FAILED', 'RECONCILIATION_REQUIRED'].includes(phase);
-
+const hasSubmittedHash = (error: unknown): error is { hash: string } => typeof error === 'object' && error !== null && typeof (error as { hash?: unknown }).hash === 'string';
 const phaseCopy: Record<TxPhase, string> = {
   IDLE: 'Ready',
   WAITING_FOR_WALLET: 'Confirm this action in your wallet',
@@ -65,12 +66,14 @@ export default function App() {
   const [category, setCategory] = useState('ANIMAL');
   const [letter, setLetter] = useState('a');
   const [copiedHash, setCopiedHash] = useState(false);
+  const [pending, setPending] = useState<JournalRecord[]>([]);
   const dialog = useRef<HTMLDialogElement>(null);
+  const announced = useRef<WalletOption[]>([]);
 
   const refresh = async () => {
     if (!gameId) return;
     try {
-      setGame(await readGame(BigInt(gameId)));
+      setGame(await (await import('./contract')).readGame(BigInt(gameId)));
       setMessage('');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to read game.');
@@ -81,16 +84,45 @@ export default function App() {
     const onAnnouncement = (event: Event) => {
       const option = optionFromAnnouncement((event as CustomEvent).detail);
       if (!option) return;
-      const options = [...wallet.options.filter((item) => item.name !== option.name), option];
-      if (wallet.phase === 'CHOOSER_OPEN') dispatch({ type: 'DISCOVER', options });
+      announced.current = [...announced.current.filter((item) => item.id !== option.id && item.provider !== option.provider), option];
+      dispatch({ type: 'ADD_OPTIONS', options: [option] });
     };
     window.addEventListener('eip6963:announceProvider', onAnnouncement);
     window.dispatchEvent(new Event('eip6963:requestProvider'));
     return () => window.removeEventListener('eip6963:announceProvider', onAnnouncement);
-  }, [wallet.options, wallet.phase]);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const records = loadJournal(localStorage).filter((item) => item.status === 'SUBMITTED' || item.status === 'RECONCILE');
+      setPending(records);
+      const latest = records.at(-1);
+      if (latest?.tx_hash) { setTxHash(latest.tx_hash); setTxPhase('RECONCILIATION_REQUIRED'); }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to load the transaction journal.');
+    }
+  }, []);
+
+  useEffect(() => {
+    const provider = wallet.selected?.provider;
+    if (!provider?.on) return;
+    const accountsChanged = (...values: unknown[]) => {
+      const accounts = values[0] as string[];
+      if (!accounts?.[0]) dispatch({ type: 'DISCONNECT' });
+      else dispatch({ type: 'CONNECTED', account: accounts[0].toLowerCase() as Address, chain: wallet.chain });
+    };
+    const chainChanged = (...values: unknown[]) => {
+      const chain = String(values[0] ?? '');
+      dispatch(chain.toLowerCase() === '0xf22d' ? { type: 'CONNECTED', account: wallet.account, chain } : { type: 'WRONG_CHAIN', chain });
+    };
+    const disconnected = () => dispatch({ type: 'DISCONNECT' });
+    return bindProviderEvents(provider, { accountsChanged, chainChanged, disconnect: disconnected });
+  }, [wallet.selected?.provider, wallet.account, wallet.chain]);
 
   const openWallet = () => {
-    dispatch({ type: 'DISCOVER', options: discoverLegacy(window) });
+    dispatch({ type: 'DISCOVERING' });
+    dispatch({ type: 'DISCOVER', options: [...announced.current, ...discoverLegacy(window)] });
+    window.dispatchEvent(new Event('eip6963:requestProvider'));
     dialog.current?.showModal();
   };
 
@@ -100,11 +132,19 @@ export default function App() {
       const accounts = await option.provider.request({ method: 'eth_requestAccounts' }) as string[];
       const chain = await option.provider.request({ method: 'eth_chainId' }) as string;
       if (!accounts?.[0]) throw new Error('Wallet returned no account.');
-      if (chain.toLowerCase() !== '0xf22f') {
-        dispatch({ type: 'WRONG_CHAIN', chain });
-        return;
+      if (chain.toLowerCase() !== '0xf22d') {
+        try {
+          await option.provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0xf22d' }] });
+        } catch (switchError) {
+          if ((switchError as { code?: number }).code !== 4902) {
+            dispatch({ type: 'WRONG_CHAIN', chain });
+            return;
+          }
+          await option.provider.request({ method: 'wallet_addEthereumChain', params: [{ chainId: '0xf22d', chainName: 'GenLayer Studio Devnet', rpcUrls: ['https://studio-dev.genlayer.com/api'], nativeCurrency: { name: 'GEN Token', symbol: 'GEN', decimals: 18 } }] });
+          await option.provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0xf22d' }] });
+        }
       }
-      dispatch({ type: 'CONNECTED', account: accounts[0].toLowerCase() as Address, chain });
+      dispatch({ type: 'CONNECTED', account: accounts[0].toLowerCase() as Address, chain: '0xf22d' });
       dialog.current?.close();
     } catch (error) {
       dispatch({ type: 'ERROR', error: error instanceof Error ? error.message : 'Wallet connection failed.' });
@@ -124,8 +164,8 @@ export default function App() {
 
   const actor = useMemo(() => {
     if (!game || !wallet.account) return 'OBSERVER';
-    if (wallet.account === game.primary) return 'A';
-    if (wallet.account === game.secondary) return 'B';
+    if (wallet.account.toLowerCase() === game.primary.toLowerCase()) return 'A';
+    if (wallet.account.toLowerCase() === game.secondary.toLowerCase()) return 'B';
     return 'OBSERVER';
   }, [game, wallet.account]);
 
@@ -136,7 +176,7 @@ export default function App() {
     if (!wallet.selected || !wallet.account || !game) return;
     setMessage('');
     try {
-      await writeAndVerify({
+      await (await import('./contract')).writeAndVerify({
         provider: wallet.selected.provider,
         account: wallet.account,
         method,
@@ -151,7 +191,8 @@ export default function App() {
       await refresh();
     } catch (error) {
       const text = error instanceof Error ? error.message : 'Transaction failed.';
-      setTxPhase(txHash ? 'RECONCILIATION_REQUIRED' : text.toLowerCase().includes('reject') ? 'REJECTED' : 'FAILED');
+      setTxPhase(hasSubmittedHash(error) ? 'RECONCILIATION_REQUIRED' : text.toLowerCase().includes('reject') ? 'REJECTED' : 'FAILED');
+      if (hasSubmittedHash(error)) setPending(loadJournal(localStorage).filter((item) => item.status === 'RECONCILE'));
       setMessage(text);
     }
   };
@@ -160,7 +201,8 @@ export default function App() {
     if (!wallet.selected || !wallet.account || !/^0x[0-9a-fA-F]{40}$/.test(opponent)) return;
     const nonce = crypto.randomUUID();
     try {
-      await writeAndVerify({
+      const api = await import('./contract');
+      const result = await api.writeAndVerify({
         provider: wallet.selected.provider,
         account: wallet.account,
         method: 'create_game',
@@ -170,11 +212,30 @@ export default function App() {
           if (hash) setTxHash(hash);
         },
       });
-      const id = await idByNonce(wallet.account, nonce);
+      const id = result.id ?? await api.idByNonce(wallet.account, nonce);
       setGameId(String(id));
-      setGame(await readGame(id));
+      setGame(await api.readGame(id));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Transaction failed.');
+      const text = error instanceof Error ? error.message : 'Transaction failed.';
+      setTxPhase(hasSubmittedHash(error) ? 'RECONCILIATION_REQUIRED' : text.toLowerCase().includes('reject') ? 'REJECTED' : 'FAILED');
+      if (hasSubmittedHash(error)) setPending(loadJournal(localStorage).filter((item) => item.status === 'RECONCILE'));
+      setMessage(text);
+    }
+  };
+
+  const reconcile = async (record: JournalRecord) => {
+    setTxHash(record.tx_hash);
+    setTxPhase('WAITING_FOR_FINALITY');
+    setMessage('');
+    try {
+      const api = await import('./contract');
+      const id = await api.reconcileWrite(record);
+      setPending(loadJournal(localStorage).filter((item) => item.status === 'SUBMITTED' || item.status === 'RECONCILE'));
+      setTxPhase('SUCCESS');
+      if (id) { setGameId(String(id)); setGame(await api.readGame(id)); }
+    } catch (error) {
+      setTxPhase('RECONCILIATION_REQUIRED');
+      setMessage(error instanceof Error ? error.message : 'Reconciliation is not complete yet.');
     }
   };
 
@@ -201,9 +262,9 @@ export default function App() {
         </nav>
 
         <div className="header-meta">
-          <span className="network-badge" title="Target Network: GenLayer Studionet">
+          <span className="network-badge" title="Target Network: GenLayer Studio Devnet">
             <span className="network-dot" aria-hidden="true" />
-            Studionet
+            Studio Devnet
           </span>
           {wallet.phase === 'CONNECTED' ? (
             <button
@@ -277,8 +338,8 @@ export default function App() {
             <div className="notice" role="status">
               <span className="notice-icon" aria-hidden="true">ℹ</span>
               <div>
-                <b>Contract Pre-Deployment Stage</b>
-                <p>Contract deployment address will be configured after PRE_DEPLOY approval and Studio deployment.</p>
+                <b>Contract address required</b>
+                <p>Contract address is not configured for this build.</p>
               </div>
             </div>
           )}
@@ -580,6 +641,11 @@ export default function App() {
                     </button>
                   </div>
                 )}
+                {pending.map((record) => (
+                  <button key={record.reservation} type="button" className="tx-copy-btn" onClick={() => void reconcile(record)}>
+                    Reconcile {short(record.tx_hash)}
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -702,7 +768,7 @@ export default function App() {
 
         {wallet.phase === 'WRONG_CHAIN' && (
           <p className="error" role="alert">
-            {wallet.error || 'Switch to Studionet to continue.'}
+            {wallet.error || 'Switch to GenLayer Studio Devnet to continue.'}
           </p>
         )}
         {wallet.phase === 'ERROR' && wallet.error && (

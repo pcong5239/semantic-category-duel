@@ -1,11 +1,14 @@
-# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+# v0.3.0
+# { "Depends": "py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng" }
 
 import hashlib
 import json
 import re
 from datetime import datetime, timezone
 
-from genlayer import *
+import genlayer as gl
+from genlayer.storage import TreeMap
+from genlayer.types import Address, u256
 
 
 MAX_CASES = 32
@@ -90,7 +93,7 @@ def validate_result(value: object) -> dict[str, object]:
     return {"v": 1, "label": value["label"]}
 
 
-class SemanticCategoryDuel(gl.Contract):
+class SemanticCategoryDuel(gl.contract.Contract):
     case_count: u256
     cases: TreeMap[u256, str]
     nonce_index: TreeMap[str, u256]
@@ -238,7 +241,7 @@ class SemanticCategoryDuel(gl.Contract):
             except Exception:
                 return False
 
-        return gl.vm.run_nondet_unsafe(leader, validator)
+        return gl.vm.run_nondet(leader, validator)
 
     @gl.public.write
     def create_game(

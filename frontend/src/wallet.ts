@@ -34,12 +34,29 @@ export function optionFromAnnouncement(detail: unknown): WalletOption | undefine
 
 export const initialWallet: WalletState = { phase: 'DISCONNECTED', options: [] };
 
+export function mergeOptions(current: WalletOption[], incoming: WalletOption[]): WalletOption[] {
+  const result = [...current];
+  for (const option of incoming) {
+    const index = result.findIndex((item) => item.id === option.id || item.provider === option.provider);
+    if (index >= 0) result[index] = option;
+    else result.push(option);
+  }
+  return result;
+}
+
+export function bindProviderEvents(provider: Eip1193, listeners: Record<string, (...args: unknown[]) => void>): () => void {
+  for (const [event, listener] of Object.entries(listeners)) provider.on?.(event, listener);
+  return () => { for (const [event, listener] of Object.entries(listeners)) provider.removeListener?.(event, listener); };
+}
+
 export function walletReducer(state: WalletState, action: { type: string; option?: WalletOption; options?: WalletOption[]; account?: Address; chain?: string; error?: string }): WalletState {
   switch (action.type) {
-    case 'DISCOVER': return { phase: 'CHOOSER_OPEN', options: action.options ?? [] };
+    case 'DISCOVERING': return { ...state, phase: 'DISCOVERING', error: undefined };
+    case 'DISCOVER': return { ...state, phase: 'CHOOSER_OPEN', options: mergeOptions(state.options, action.options ?? []) };
+    case 'ADD_OPTIONS': return { ...state, options: mergeOptions(state.options, action.options ?? []) };
     case 'CONNECTING': return { ...state, phase: 'CONNECTING', selected: action.option, error: undefined };
     case 'CONNECTED': return { ...state, phase: 'CONNECTED', account: action.account, chain: action.chain, error: undefined };
-    case 'WRONG_CHAIN': return { ...state, phase: 'WRONG_CHAIN', chain: action.chain, error: 'Switch to Studionet to continue.' };
+    case 'WRONG_CHAIN': return { ...state, phase: 'WRONG_CHAIN', chain: action.chain, error: 'Switch to GenLayer Studio Devnet to continue.' };
     case 'ERROR': return { ...state, phase: 'ERROR', error: action.error ?? 'Wallet connection failed.' };
     case 'DISCONNECT': return initialWallet;
     default: return state;

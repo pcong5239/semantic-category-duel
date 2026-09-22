@@ -8,3 +8,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 artifacts/
+
+# Local planning and review records are never public release material.
+RESEARCH-HANDOFF.md
+STAGE-1.md
+STAGE-2.md
+docs/

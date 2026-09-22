@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { terminalTxPhase } from '../src/App';
-import type { TxPhase } from '../src/contract';
+import { terminalTxPhase, type TxPhase } from '../src/types';
 
 describe('transaction indicator', () => {
   it('spins only while the operation can still progress automatically', () => {

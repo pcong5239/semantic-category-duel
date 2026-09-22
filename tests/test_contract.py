@@ -24,6 +24,11 @@ def record(contract, game_id=1):
     return json.loads(contract.get_case(game_id))
 
 
+def mock_json(vm, value):
+    # gltest parses JSON-looking mocks once; keep the wire response textual.
+    vm.mock_llm("Classify whether", json.dumps(value))
+
+
 def create_and_join(game, category="ANIMAL", letter="a"):
     vm, contract, alice, bob, _ = game
     vm.sender = alice
@@ -71,7 +76,7 @@ def test_valid_consensus_move_and_independent_validator(game):
     create_and_join(game)
     vm.sender = alice
     contract.play_word(1, "ant", 0, 2)
-    vm.mock_llm("Classify whether", '{"v":1,"label":"IN_CATEGORY"}')
+    mock_json(vm, '{"v":1,"label":"IN_CATEGORY"}')
     vm.sender = observer
     contract.evaluate_move(1, 3)
     current = record(contract)
@@ -82,7 +87,7 @@ def test_valid_consensus_move_and_independent_validator(game):
     assert current["domain"]["moves"][0]["result"] == "VALID"
     assert vm.run_validator(leader_result={"v": 1, "label": "IN_CATEGORY"}) is True
     vm.clear_mocks()
-    vm.mock_llm("Classify whether", '{"v":1,"label":"OUT_OF_CATEGORY"}')
+    mock_json(vm, '{"v":1,"label":"OUT_OF_CATEGORY"}')
     assert vm.run_validator(leader_result={"v": 1, "label": "IN_CATEGORY"}) is False
 
 
@@ -91,7 +96,7 @@ def test_bad_link_precedes_repeat_without_llm(game):
     create_and_join(game)
     vm.sender = alice
     contract.play_word(1, "ant", 0, 2)
-    vm.mock_llm("Classify whether", '{"v":1,"label":"IN_CATEGORY"}')
+    mock_json(vm, '{"v":1,"label":"IN_CATEGORY"}')
     contract.evaluate_move(1, 3)
     vm.sender = bob
     contract.play_word(1, "ant", 1, 4)
@@ -107,7 +112,7 @@ def test_unknown_retry_exhaustion_and_pass(game):
     create_and_join(game)
     vm.sender = alice
     contract.play_word(1, "ant", 0, 2)
-    vm.mock_llm("Classify whether", '{"v":1,"label":"UNKNOWN"}')
+    mock_json(vm, '{"v":1,"label":"UNKNOWN"}')
     vm.sender = observer
     contract.evaluate_move(1, 3)
     assert record(contract)["phase"] == "UNRESOLVED"
@@ -134,7 +139,7 @@ def test_malformed_result_and_disagreement_do_not_mutate(game):
     vm.sender = alice
     contract.play_word(1, "ant", 0, 2)
     before = contract.get_case(1)
-    vm.mock_llm("Classify whether", '{"v":1,"label":"YES"}')
+    mock_json(vm, '{"v":1,"label":"YES"}')
     vm.sender = observer
     with vm.expect_revert("MALFORMED_RESULT"):
         contract.evaluate_move(1, 3)
