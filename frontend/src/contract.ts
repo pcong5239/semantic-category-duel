@@ -24,6 +24,32 @@ export async function idByNonce(creator: Address, nonce: string, signal?: AbortS
 
 export type Calldata = null | boolean | number | bigint | string | Uint8Array | Calldata[] | { [key: string]: Calldata };
 
+const numericPositions: Record<string, number[]> = {
+  create_game: [],
+  join_game: [0, 1],
+  play_word: [0, 2, 3],
+  evaluate_move: [0, 1],
+  retry_move: [0, 1],
+  pass_turn: [0, 1, 2],
+  resign_game: [0, 1],
+};
+const argumentCounts: Record<string, number> = { create_game: 4, join_game: 2, play_word: 4, evaluate_move: 2, retry_move: 2, pass_turn: 3, resign_game: 2 };
+
+export function decodeJournalArgs(method: string, encoded: string): Calldata[] {
+  const args = JSON.parse(encoded) as unknown;
+  if (!Array.isArray(args) || argumentCounts[method] === undefined || args.length !== argumentCounts[method]) throw new Error('JOURNAL_ARGS_CORRUPT');
+  for (const index of numericPositions[method]) {
+    if (typeof args[index] !== 'string' || !/^(0|[1-9][0-9]*)$/.test(args[index])) throw new Error('JOURNAL_ARGS_CORRUPT');
+    args[index] = BigInt(args[index]);
+  }
+  return args as Calldata[];
+}
+
+export function normalizeAddress(value: string): Address {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(value)) throw new Error('Invalid address.');
+  return value.toLowerCase() as Address;
+}
+
 const delay = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
   if (signal?.aborted) return reject(signal.reason);
   const abort = () => { clearTimeout(timer); reject(signal?.reason); };
@@ -73,6 +99,8 @@ export function requirePositiveCaseId(value: bigint | undefined): bigint {
 }
 
 export async function operationArgsHash(args: Calldata[]): Promise<string> {
+  // Every numeric ABI field in this contract is bounded to 32, so converting
+  // restored bigint values to JSON number tokens is exact and matches Python.
   const wire = JSON.stringify(args, (_, value) => typeof value === 'bigint' ? Number(value) : value);
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(wire));
   return [...new Uint8Array(bytes)].map((value) => value.toString(16).padStart(2, '0')).join('');
@@ -83,6 +111,13 @@ export async function assertOperationReadback(version: unknown, method: string, 
   const parsed = JSON.parse(String(version)) as { last_operation?: { method?: string; caller?: string; args_hash?: string } };
   if (parsed.last_operation?.method !== method || parsed.last_operation?.caller?.toLowerCase() !== account.toLowerCase()) throw new Error('Authoritative readback does not match this operation.');
   if (args && parsed.last_operation.args_hash !== await operationArgsHash(args)) throw new Error('Authoritative readback arguments do not match this operation.');
+}
+
+export async function verifyReconcileTransaction<T>(transaction: FinalizedTransaction, readback: () => Promise<T>, onPhase?: (phase: TxPhase) => void): Promise<T> {
+  onPhase?.('VERIFYING_EXECUTION');
+  if (!isSuccessful(transaction)) throw new Error(`Execution failed: ${transaction.statusName} / ${transaction.resultName} / ${transaction.txExecutionResultName}`);
+  onPhase?.('VERIFYING_READBACK');
+  return readback();
 }
 
 export async function writeAndVerify(input: { provider: Eip1193; account: Address; method: string; args: Calldata[]; id?: bigint; nextRevision?: bigint; signal?: AbortSignal; onPhase: (phase: TxPhase, hash?: string) => void }): Promise<{ hash: `0x${string}`; id?: bigint }> {
@@ -124,15 +159,14 @@ export async function withReconcileSlot<T>(operation: () => Promise<T>): Promise
   }
 }
 
-export async function reconcileWrite(record: JournalRecord, signal?: AbortSignal): Promise<bigint | undefined> {
+export async function reconcileWrite(record: JournalRecord, signal?: AbortSignal, onPhase?: (phase: TxPhase) => void): Promise<bigint | undefined> {
   if (!record.tx_hash || record.chain !== String(studioDevnet.id) || record.contract.toLowerCase() !== contractAddress.toLowerCase()) throw new Error('RECONCILE_CONTEXT_MISMATCH');
   return withReconcileSlot(async () => {
     const transaction = await waitForFinality(readClient, record.tx_hash as `0x${string}`, signal, [0], 'reconcile-finality');
-    if (!isSuccessful(transaction)) throw new Error(`Execution failed: ${transaction.statusName} / ${transaction.resultName} / ${transaction.txExecutionResultName}`);
-    const args = JSON.parse(record.args_json) as Calldata[];
+    const args = decodeJournalArgs(record.method, record.args_json);
     const id = record.method === 'create_game' ? undefined : BigInt(String(args[0]));
     const revision = BigInt(record.pre_revision) + 1n;
-    const caseId = await verifyReadback(record.method, record.account, args, id, revision, signal);
+    const caseId = await verifyReconcileTransaction(transaction, () => verifyReadback(record.method, record.account, args, id, revision, signal), onPhase);
     await updateJournal(localStorage, record.reservation, { status: 'VERIFIED' });
     rpcBudget.invalidate(`${studioDevnet.id}:${contractAddress}`);
     return caseId;

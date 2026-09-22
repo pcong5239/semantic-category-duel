@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assertOperationReadback, requirePositiveCaseId, waitForFinality, withReconcileSlot } from '../src/contract';
+import { assertOperationReadback, decodeJournalArgs, normalizeAddress, operationArgsHash, requirePositiveCaseId, verifyReconcileTransaction, waitForFinality, withReconcileSlot } from '../src/contract';
 
 const finalized = { statusName: 'FINALIZED', txExecutionResultName: 'FINISHED_WITH_RETURN' };
 
@@ -70,5 +70,39 @@ describe('authoritative operation readback', () => {
     const version = JSON.stringify({ last_operation: { method: 'join_game', caller: account, args_hash: '49a64717d5d4cb19952e6eac2946415cf6879adacf9908e7d872332d32c6e684' } });
     await expect(assertOperationReadback(version, 'join_game', account, [1n, 2n])).resolves.toBeUndefined();
     await expect(assertOperationReadback(version, 'join_game', account, [1n, 3n])).rejects.toThrow('arguments do not match');
+  });
+
+  it.each([
+    ['join_game', [1n, 2n]],
+    ['play_word', [1n, 'ant', 2n, 3n]],
+    ['evaluate_move', [1n, 3n]],
+    ['retry_move', [1n, 4n]],
+    ['pass_turn', [1n, 2n, 3n]],
+    ['resign_game', [1n, 3n]],
+  ] as const)('restores %s journal numeric types and the original hash', async (method, args) => {
+    const encoded = JSON.stringify(args, (_, value) => typeof value === 'bigint' ? value.toString() : value);
+    const restored = decodeJournalArgs(method, encoded);
+    expect(restored).toEqual(args);
+    expect(await operationArgsHash(restored)).toBe(await operationArgsHash([...args]));
+  });
+
+  it('normalizes mixed-case create opponents before submission and hashing', async () => {
+    const mixed = `0x${'Aa'.repeat(20)}`;
+    expect(normalizeAddress(mixed)).toBe(mixed.toLowerCase());
+    expect(await operationArgsHash(['nonce', normalizeAddress(mixed), 'ANIMAL', 'a']))
+      .toBe(await operationArgsHash(['nonce', mixed.toLowerCase(), 'ANIMAL', 'a']));
+  });
+
+  it('rejects corrupt journal methods, arity and numeric encodings', () => {
+    expect(() => decodeJournalArgs('unknown', '[]')).toThrow('JOURNAL_ARGS_CORRUPT');
+    expect(() => decodeJournalArgs('join_game', '["1"]')).toThrow('JOURNAL_ARGS_CORRUPT');
+    expect(() => decodeJournalArgs('join_game', '["01","2"]')).toThrow('JOURNAL_ARGS_CORRUPT');
+  });
+
+  it('emits reconciliation verification phases before readback success', async () => {
+    const phases: string[] = [];
+    const value = await verifyReconcileTransaction(finalized as never, async () => 7n, (phase) => phases.push(phase));
+    expect(value).toBe(7n);
+    expect(phases).toEqual(['VERIFYING_EXECUTION', 'VERIFYING_READBACK']);
   });
 });

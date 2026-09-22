@@ -214,11 +214,12 @@ export default function App() {
     const nonce = crypto.randomUUID();
     try {
       const api = await import('./contract');
+      const normalizedOpponent = api.normalizeAddress(opponent);
       const result = await api.writeAndVerify({
         provider: wallet.selected.provider,
         account: wallet.account,
         method: 'create_game',
-        args: [nonce, opponent, category, letter],
+        args: [nonce, normalizedOpponent, category, letter],
         signal: lifecycle.current.signal,
         onPhase: (phase, hash) => {
           setTxPhase(phase);
@@ -243,7 +244,7 @@ export default function App() {
     setMessage('');
     try {
       const api = await import('./contract');
-      const id = await api.reconcileWrite(record, lifecycle.current.signal);
+      const id = await api.reconcileWrite(record, lifecycle.current.signal, setTxPhase);
       setPending(loadJournal(localStorage).filter((item) => item.status === 'SUBMITTED' || item.status === 'RECONCILE'));
       setTxPhase('SUCCESS');
       if (id) { setGameId(String(id)); setGame(await api.readGame(id, lifecycle.current.signal)); }
