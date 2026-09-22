@@ -23,7 +23,7 @@ npm ci
 npm run dev
 ```
 
-Set `VITE_CONTRACT_ADDRESS` to the deployed Studio Devnet contract address before starting the frontend.
+Set `VITE_CONTRACT_ADDRESS=0x1C6Ce54fA8Fd3A99bf59c8823252Ac5bd0d5bEf1` before starting the frontend.
 
 ## Verify
 
@@ -43,6 +43,8 @@ python -m pytest -q tests/test_contract.py
 
 - Network: GenLayer Studio Devnet (chain ID `61997`)
 - Supported injected wallets: MetaMask, Rabby and OKX Wallet
-- Contract: `contracts/main.py`
+- Live contract: [`0x1C6C…bEf1`](https://explorer-studio-dev.genlayer.com/address/0x1C6Ce54fA8Fd3A99bf59c8823252Ac5bd0d5bEf1)
+- Deployment details: [`DEPLOYMENT.md`](DEPLOYMENT.md)
+- Contract source: `contracts/main.py`
 
 The frontend starts disconnected, lists only wallets actually announced or detected in the browser, and binds writes to the selected provider and account.
