@@ -9,36 +9,83 @@ export class WriteError extends Error {
   constructor(message: string, readonly hash?: `0x${string}`) { super(message); }
 }
 export const readClient = createClient({ chain: studioDevnet });
+type FinalizedTransaction = Awaited<ReturnType<typeof readClient.waitForFinalization>>;
 
-export async function readGame(id: bigint): Promise<Game | null> {
+export async function readGame(id: bigint, signal?: AbortSignal): Promise<Game | null> {
   if (!contractAddress) return null;
-  const raw = await rpcBudget.request({ rowId: 'game-detail', key: `${studioDevnet.id}:${contractAddress}:get_case:${id}`, call: () => readClient.readContract({ address: contractAddress, functionName: 'get_case', args: [id] }) });
+  const raw = await rpcBudget.request({ rowId: 'game-detail', key: `${studioDevnet.id}:${contractAddress}:get_case:${id}`, signal, call: () => readClient.readContract({ address: contractAddress, functionName: 'get_case', args: [id] }) });
   return raw === 'null' ? null : JSON.parse(String(raw)) as Game;
 }
 
-export async function idByNonce(creator: Address, nonce: string): Promise<bigint> {
-  const value = await rpcBudget.request({ rowId: 'nonce-readback', key: `${studioDevnet.id}:${contractAddress}:get_id_by_nonce:${creator}:${nonce}`, call: () => readClient.readContract({ address: contractAddress, functionName: 'get_id_by_nonce', args: [creator, nonce] }) });
+export async function idByNonce(creator: Address, nonce: string, signal?: AbortSignal): Promise<bigint> {
+  const value = await rpcBudget.request({ rowId: 'nonce-readback', key: `${studioDevnet.id}:${contractAddress}:get_id_by_nonce:${creator}:${nonce}`, signal, call: () => readClient.readContract({ address: contractAddress, functionName: 'get_id_by_nonce', args: [creator, nonce] }) });
   return BigInt(String(value));
 }
 
 export type Calldata = null | boolean | number | bigint | string | Uint8Array | Calldata[] | { [key: string]: Calldata };
 
-async function verifyReadback(method: string, account: Address, args: Calldata[], id?: bigint, revision?: bigint): Promise<bigint | undefined> {
+const delay = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  if (signal?.aborted) return reject(signal.reason);
+  const abort = () => { clearTimeout(timer); reject(signal?.reason); };
+  const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
+  signal?.addEventListener('abort', abort, { once: true });
+});
+
+type FinalityClient = { waitForFinalization(input: { hash: never; interval: number; retries: number }): Promise<FinalizedTransaction> };
+
+export async function waitForFinality(client: FinalityClient, hash: `0x${string}`, signal?: AbortSignal, delays = [2000, 2000, 4000], rowId = 'write-finality'): Promise<FinalizedTransaction> {
+  let lastError: unknown;
+  for (const waitMs of delays) {
+    await delay(waitMs, signal);
+    signal?.throwIfAborted();
+    try {
+      return await rpcBudget.request({
+        rowId,
+        key: `${hash}:${waitMs}:${Date.now()}`,
+        signal,
+        call: () => client.waitForFinalization({ hash: hash as never, interval: 0, retries: 0 }),
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError ?? new Error('FINALITY_PENDING');
+}
+
+async function verifyReadback(method: string, account: Address, args: Calldata[], id?: bigint, revision?: bigint, signal?: AbortSignal): Promise<bigint | undefined> {
   let caseId = id;
   let nextRevision = revision;
   if (method === 'create_game') {
-    caseId = await idByNonce(account, String(args[0]));
+    caseId = await idByNonce(account, String(args[0]), signal);
     nextRevision = 1n;
   }
-  if (!caseId || !nextRevision) return caseId;
-  const version = await rpcBudget.request({ rowId: 'version-readback', key: `${studioDevnet.id}:${contractAddress}:get_version:${caseId}:${nextRevision}`, call: () => readClient.readContract({ address: contractAddress, functionName: 'get_version', args: [caseId!, nextRevision!] }) });
+  caseId = requirePositiveCaseId(caseId);
+  if (!nextRevision || nextRevision <= 0n) throw new Error('Authoritative operation identity is unavailable.');
+  const version = await rpcBudget.request({ rowId: 'version-readback', key: `${studioDevnet.id}:${contractAddress}:get_version:${caseId}:${nextRevision}`, signal, call: () => readClient.readContract({ address: contractAddress, functionName: 'get_version', args: [caseId!, nextRevision!] }) });
   if (version === 'null') throw new Error('Authoritative historical readback is unavailable.');
-  const parsed = JSON.parse(String(version)) as { last_operation?: { method?: string; caller?: string } };
-  if (parsed.last_operation?.method !== method || parsed.last_operation?.caller?.toLowerCase() !== account.toLowerCase()) throw new Error('Authoritative readback does not match this operation.');
+  await assertOperationReadback(version, method, account, args);
   return caseId;
 }
 
-export async function writeAndVerify(input: { provider: Eip1193; account: Address; method: string; args: Calldata[]; id?: bigint; nextRevision?: bigint; onPhase: (phase: TxPhase, hash?: string) => void }): Promise<{ hash: `0x${string}`; id?: bigint }> {
+export function requirePositiveCaseId(value: bigint | undefined): bigint {
+  if (!value || value <= 0n) throw new Error('Authoritative operation identity is unavailable.');
+  return value;
+}
+
+export async function operationArgsHash(args: Calldata[]): Promise<string> {
+  const wire = JSON.stringify(args, (_, value) => typeof value === 'bigint' ? Number(value) : value);
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(wire));
+  return [...new Uint8Array(bytes)].map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+export async function assertOperationReadback(version: unknown, method: string, account: Address, args?: Calldata[]): Promise<void> {
+  if (version === 'null' || version === null || version === undefined) throw new Error('Authoritative historical readback is unavailable.');
+  const parsed = JSON.parse(String(version)) as { last_operation?: { method?: string; caller?: string; args_hash?: string } };
+  if (parsed.last_operation?.method !== method || parsed.last_operation?.caller?.toLowerCase() !== account.toLowerCase()) throw new Error('Authoritative readback does not match this operation.');
+  if (args && parsed.last_operation.args_hash !== await operationArgsHash(args)) throw new Error('Authoritative readback arguments do not match this operation.');
+}
+
+export async function writeAndVerify(input: { provider: Eip1193; account: Address; method: string; args: Calldata[]; id?: bigint; nextRevision?: bigint; signal?: AbortSignal; onPhase: (phase: TxPhase, hash?: string) => void }): Promise<{ hash: `0x${string}`; id?: bigint }> {
   if (!contractAddress) throw new Error('Contract address is not configured.');
   const client = createClient({ chain: studioDevnet, account: input.account, provider: input.provider });
   const json = JSON.stringify(input.args, (_, value) => typeof value === 'bigint' ? value.toString() : value);
@@ -50,11 +97,11 @@ export async function writeAndVerify(input: { provider: Eip1193; account: Addres
     await updateJournal(localStorage, journal.reservation, { tx_hash: hash, status: 'SUBMITTED' });
     input.onPhase('SUBMITTED', hash);
     input.onPhase('WAITING_FOR_FINALITY', hash);
-    const receipt = await client.waitForFinalization({ hash: hash as never });
+    const receipt = await waitForFinality(client, hash, input.signal);
     input.onPhase('VERIFYING_EXECUTION', hash);
     if (!isSuccessful(receipt)) throw new Error(`Execution failed: ${receipt.statusName} / ${receipt.resultName} / ${receipt.txExecutionResultName}`);
     input.onPhase('VERIFYING_READBACK', hash);
-    const id = await verifyReadback(input.method, input.account, input.args, input.id, input.nextRevision);
+    const id = await verifyReadback(input.method, input.account, input.args, input.id, input.nextRevision, input.signal);
     await updateJournal(localStorage, journal.reservation, { status: 'VERIFIED' });
     rpcBudget.invalidate(`${studioDevnet.id}:${contractAddress}`);
     input.onPhase('SUCCESS', hash);
@@ -65,15 +112,29 @@ export async function writeAndVerify(input: { provider: Eip1193; account: Addres
   }
 }
 
-export async function reconcileWrite(record: JournalRecord): Promise<bigint | undefined> {
+let activeReconciliations = 0;
+
+export async function withReconcileSlot<T>(operation: () => Promise<T>): Promise<T> {
+  if (activeReconciliations >= 2) throw new Error('RECONCILE_CONCURRENCY_LIMIT');
+  activeReconciliations += 1;
+  try {
+    return await operation();
+  } finally {
+    activeReconciliations -= 1;
+  }
+}
+
+export async function reconcileWrite(record: JournalRecord, signal?: AbortSignal): Promise<bigint | undefined> {
   if (!record.tx_hash || record.chain !== String(studioDevnet.id) || record.contract.toLowerCase() !== contractAddress.toLowerCase()) throw new Error('RECONCILE_CONTEXT_MISMATCH');
-  const transaction = await readClient.waitForFinalization({ hash: record.tx_hash as never });
-  if (!isSuccessful(transaction)) throw new Error(`Execution failed: ${transaction.statusName} / ${transaction.resultName} / ${transaction.txExecutionResultName}`);
-  const args = JSON.parse(record.args_json) as Calldata[];
-  const id = record.method === 'create_game' ? undefined : BigInt(String(args[0]));
-  const revision = BigInt(record.pre_revision) + 1n;
-  const caseId = await verifyReadback(record.method, record.account, args, id, revision);
-  await updateJournal(localStorage, record.reservation, { status: 'VERIFIED' });
-  rpcBudget.invalidate(`${studioDevnet.id}:${contractAddress}`);
-  return caseId;
+  return withReconcileSlot(async () => {
+    const transaction = await waitForFinality(readClient, record.tx_hash as `0x${string}`, signal, [0], 'reconcile-finality');
+    if (!isSuccessful(transaction)) throw new Error(`Execution failed: ${transaction.statusName} / ${transaction.resultName} / ${transaction.txExecutionResultName}`);
+    const args = JSON.parse(record.args_json) as Calldata[];
+    const id = record.method === 'create_game' ? undefined : BigInt(String(args[0]));
+    const revision = BigInt(record.pre_revision) + 1n;
+    const caseId = await verifyReadback(record.method, record.account, args, id, revision, signal);
+    await updateJournal(localStorage, record.reservation, { status: 'VERIFIED' });
+    rpcBudget.invalidate(`${studioDevnet.id}:${contractAddress}`);
+    return caseId;
+  });
 }

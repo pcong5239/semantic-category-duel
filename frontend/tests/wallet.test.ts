@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bindProviderEvents, discoverLegacy, mergeOptions, optionFromAnnouncement, walletReducer, initialWallet } from '../src/wallet';
+import { accountSessionAction, bindProviderEvents, canWrite, discoverLegacy, mergeOptions, optionFromAnnouncement, walletReducer, initialWallet } from '../src/wallet';
 
 const provider = (flags: object = {}) => ({ request: async () => [], ...flags });
 describe('wallet discovery and canonical session', () => {
@@ -36,5 +36,22 @@ describe('wallet discovery and canonical session', () => {
     const selecting = walletReducer(initialWallet, { type: 'CONNECTING', option });
     const connected = walletReducer(selecting, { type: 'CONNECTED', account: '0x123' });
     expect(connected.phase).toBe('CONNECTED'); expect(connected.selected).toBe(option);
+  });
+  it('keeps writes disabled when a wrong-chain event is followed by an account event', async () => {
+    const selected = { id: 'm', name: 'MetaMask' as const, provider: provider() };
+    const connected = walletReducer(walletReducer(initialWallet, { type: 'CONNECTING', option: selected }), { type: 'CONNECTED', account: '0x123', chain: '0xf22d' });
+    const wrong = walletReducer(connected, { type: 'WRONG_CHAIN', chain: '0x1' });
+    const action = await accountSessionAction({ request: async () => '0x1' }, ['0xABC']);
+    const afterAccount = walletReducer(wrong, action);
+    expect(afterAccount.phase).toBe('WRONG_CHAIN');
+    expect(canWrite(afterAccount)).toBe(false);
+  });
+  it('enables writes only after chain and accounts are both re-read on Studio Devnet', async () => {
+    const selected = { id: 'm', name: 'MetaMask' as const, provider: provider() };
+    const action = await accountSessionAction({ request: async () => '0xf22d' }, ['0xABC']);
+    const recovered = walletReducer(walletReducer(initialWallet, { type: 'CONNECTING', option: selected }), action);
+    expect(recovered).toMatchObject({ phase: 'CONNECTED', account: '0xabc', chain: '0xf22d' });
+    expect(canWrite(recovered)).toBe(true);
+    expect(await accountSessionAction({ request: async () => '0xf22d' }, [])).toEqual({ type: 'DISCONNECT' });
   });
 });

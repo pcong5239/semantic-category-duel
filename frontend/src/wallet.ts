@@ -4,6 +4,8 @@ export type WalletName = 'MetaMask' | 'OKX Wallet' | 'Rabby';
 export type WalletOption = { id: string; name: WalletName; provider: Eip1193 };
 export type WalletPhase = 'DISCONNECTED' | 'DISCOVERING' | 'CHOOSER_OPEN' | 'CONNECTING' | 'CONNECTED' | 'WRONG_CHAIN' | 'ERROR';
 export type WalletState = { phase: WalletPhase; options: WalletOption[]; selected?: WalletOption; account?: Address; chain?: string; error?: string };
+export type WalletAction = { type: string; option?: WalletOption; options?: WalletOption[]; account?: Address; chain?: string; error?: string };
+export const STUDIO_CHAIN = '0xf22d';
 
 const supported = (name: string, rdns = ''): WalletName | undefined => {
   const key = `${name} ${rdns}`.toLowerCase();
@@ -49,7 +51,16 @@ export function bindProviderEvents(provider: Eip1193, listeners: Record<string, 
   return () => { for (const [event, listener] of Object.entries(listeners)) provider.removeListener?.(event, listener); };
 }
 
-export function walletReducer(state: WalletState, action: { type: string; option?: WalletOption; options?: WalletOption[]; account?: Address; chain?: string; error?: string }): WalletState {
+export async function accountSessionAction(provider: Eip1193, accounts: unknown): Promise<WalletAction> {
+  const account = Array.isArray(accounts) && typeof accounts[0] === 'string' ? accounts[0].toLowerCase() as Address : undefined;
+  if (!account) return { type: 'DISCONNECT' };
+  const chain = String(await provider.request({ method: 'eth_chainId' })).toLowerCase();
+  return chain === STUDIO_CHAIN ? { type: 'CONNECTED', account, chain } : { type: 'WRONG_CHAIN', chain };
+}
+
+export const canWrite = (state: WalletState): boolean => state.phase === 'CONNECTED' && state.chain?.toLowerCase() === STUDIO_CHAIN && Boolean(state.selected && state.account);
+
+export function walletReducer(state: WalletState, action: WalletAction): WalletState {
   switch (action.type) {
     case 'DISCOVERING': return { ...state, phase: 'DISCOVERING', error: undefined };
     case 'DISCOVER': return { ...state, phase: 'CHOOSER_OPEN', options: mergeOptions(state.options, action.options ?? []) };

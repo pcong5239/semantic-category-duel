@@ -92,4 +92,6 @@ export const rpcBudget = createRpcBudget([
   { id: 'game-detail', maxRequests: 2, maxRetries: 1, backoffMs: 1000, cacheMs: 2000 },
   { id: 'nonce-readback', maxRequests: 2, maxRetries: 1, backoffMs: 1000, cacheMs: 0 },
   { id: 'version-readback', maxRequests: 2, maxRetries: 1, backoffMs: 1000, cacheMs: 0 },
+  { id: 'write-finality', maxRequests: 1, maxRetries: 0, backoffMs: 0, cacheMs: 0 },
+  { id: 'reconcile-finality', maxRequests: 1, maxRetries: 0, backoffMs: 0, cacheMs: 0 },
 ]);

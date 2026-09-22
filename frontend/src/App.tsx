@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { Calldata } from './contract';
 import { contractAddress } from './config';
-import { terminalTxPhase, type Address, type Game, type TxPhase } from './types';
-import { bindProviderEvents, discoverLegacy, initialWallet, optionFromAnnouncement, walletReducer, type WalletOption } from './wallet';
+import { terminalTxPhase, type Game, type TxPhase } from './types';
+import { accountSessionAction, bindProviderEvents, canWrite, discoverLegacy, initialWallet, optionFromAnnouncement, STUDIO_CHAIN, walletReducer, type WalletOption } from './wallet';
 import { loadJournal, type JournalRecord } from './pending';
 
 const short = (value?: string) => value ? `${value.slice(0, 6)}…${value.slice(-4)}` : '';
@@ -69,11 +69,17 @@ export default function App() {
   const [pending, setPending] = useState<JournalRecord[]>([]);
   const dialog = useRef<HTMLDialogElement>(null);
   const announced = useRef<WalletOption[]>([]);
+  const lifecycle = useRef(new AbortController());
+
+  useEffect(() => {
+    lifecycle.current = new AbortController();
+    return () => lifecycle.current.abort(new Error('PAGE_UNMOUNTED'));
+  }, []);
 
   const refresh = async () => {
     if (!gameId) return;
     try {
-      setGame(await (await import('./contract')).readGame(BigInt(gameId)));
+      setGame(await (await import('./contract')).readGame(BigInt(gameId), lifecycle.current.signal));
       setMessage('');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to read game.');
@@ -106,18 +112,19 @@ export default function App() {
   useEffect(() => {
     const provider = wallet.selected?.provider;
     if (!provider?.on) return;
-    const accountsChanged = (...values: unknown[]) => {
-      const accounts = values[0] as string[];
-      if (!accounts?.[0]) dispatch({ type: 'DISCONNECT' });
-      else dispatch({ type: 'CONNECTED', account: accounts[0].toLowerCase() as Address, chain: wallet.chain });
+    const applySession = async (accounts?: unknown) => {
+      try {
+        const current = accounts ?? await provider.request({ method: 'eth_accounts' });
+        dispatch(await accountSessionAction(provider, current));
+      } catch (error) {
+        dispatch({ type: 'ERROR', error: error instanceof Error ? error.message : 'Wallet session refresh failed.' });
+      }
     };
-    const chainChanged = (...values: unknown[]) => {
-      const chain = String(values[0] ?? '');
-      dispatch(chain.toLowerCase() === '0xf22d' ? { type: 'CONNECTED', account: wallet.account, chain } : { type: 'WRONG_CHAIN', chain });
-    };
+    const accountsChanged = (...values: unknown[]) => { void applySession(values[0]); };
+    const chainChanged = () => { void applySession(); };
     const disconnected = () => dispatch({ type: 'DISCONNECT' });
     return bindProviderEvents(provider, { accountsChanged, chainChanged, disconnect: disconnected });
-  }, [wallet.selected?.provider, wallet.account, wallet.chain]);
+  }, [wallet.selected?.provider]);
 
   const openWallet = () => {
     dispatch({ type: 'DISCOVERING' });
@@ -132,19 +139,22 @@ export default function App() {
       const accounts = await option.provider.request({ method: 'eth_requestAccounts' }) as string[];
       const chain = await option.provider.request({ method: 'eth_chainId' }) as string;
       if (!accounts?.[0]) throw new Error('Wallet returned no account.');
-      if (chain.toLowerCase() !== '0xf22d') {
+      if (chain.toLowerCase() !== STUDIO_CHAIN) {
         try {
-          await option.provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0xf22d' }] });
+          await option.provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: STUDIO_CHAIN }] });
         } catch (switchError) {
           if ((switchError as { code?: number }).code !== 4902) {
             dispatch({ type: 'WRONG_CHAIN', chain });
             return;
           }
-          await option.provider.request({ method: 'wallet_addEthereumChain', params: [{ chainId: '0xf22d', chainName: 'GenLayer Studio Devnet', rpcUrls: ['https://studio-dev.genlayer.com/api'], nativeCurrency: { name: 'GEN Token', symbol: 'GEN', decimals: 18 } }] });
-          await option.provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0xf22d' }] });
+          await option.provider.request({ method: 'wallet_addEthereumChain', params: [{ chainId: STUDIO_CHAIN, chainName: 'GenLayer Studio Devnet', rpcUrls: ['https://studio-dev.genlayer.com/api'], nativeCurrency: { name: 'GEN Token', symbol: 'GEN', decimals: 18 } }] });
+          await option.provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: STUDIO_CHAIN }] });
         }
       }
-      dispatch({ type: 'CONNECTED', account: accounts[0].toLowerCase() as Address, chain: '0xf22d' });
+      const currentAccounts = await option.provider.request({ method: 'eth_accounts' });
+      const session = await accountSessionAction(option.provider, currentAccounts);
+      dispatch(session);
+      if (session.type !== 'CONNECTED') return;
       dialog.current?.close();
     } catch (error) {
       dispatch({ type: 'ERROR', error: error instanceof Error ? error.message : 'Wallet connection failed.' });
@@ -170,10 +180,11 @@ export default function App() {
   }, [game, wallet.account]);
 
   const currentPlayer = (game?.domain.turn ?? 0) % 2 === 0 ? 'A' : 'B';
-  const canPlay = game?.phase === 'TURN' && actor === currentPlayer;
+  const writesEnabled = canWrite(wallet);
+  const canPlay = writesEnabled && game?.phase === 'TURN' && actor === currentPlayer;
 
   const transact = async (method: string, args: Calldata[]) => {
-    if (!wallet.selected || !wallet.account || !game) return;
+    if (!canWrite(wallet) || !wallet.selected || !wallet.account || !game) return;
     setMessage('');
     try {
       await (await import('./contract')).writeAndVerify({
@@ -183,6 +194,7 @@ export default function App() {
         args,
         id: BigInt(game.id),
         nextRevision: BigInt(game.revision) + 1n,
+        signal: lifecycle.current.signal,
         onPhase: (phase, hash) => {
           setTxPhase(phase);
           if (hash) setTxHash(hash);
@@ -198,7 +210,7 @@ export default function App() {
   };
 
   const createGame = async () => {
-    if (!wallet.selected || !wallet.account || !/^0x[0-9a-fA-F]{40}$/.test(opponent)) return;
+    if (!canWrite(wallet) || !wallet.selected || !wallet.account || !/^0x[0-9a-fA-F]{40}$/.test(opponent)) return;
     const nonce = crypto.randomUUID();
     try {
       const api = await import('./contract');
@@ -207,14 +219,15 @@ export default function App() {
         account: wallet.account,
         method: 'create_game',
         args: [nonce, opponent, category, letter],
+        signal: lifecycle.current.signal,
         onPhase: (phase, hash) => {
           setTxPhase(phase);
           if (hash) setTxHash(hash);
         },
       });
-      const id = result.id ?? await api.idByNonce(wallet.account, nonce);
+      const id = result.id ?? await api.idByNonce(wallet.account, nonce, lifecycle.current.signal);
       setGameId(String(id));
-      setGame(await api.readGame(id));
+      setGame(await api.readGame(id, lifecycle.current.signal));
     } catch (error) {
       const text = error instanceof Error ? error.message : 'Transaction failed.';
       setTxPhase(hasSubmittedHash(error) ? 'RECONCILIATION_REQUIRED' : text.toLowerCase().includes('reject') ? 'REJECTED' : 'FAILED');
@@ -224,15 +237,16 @@ export default function App() {
   };
 
   const reconcile = async (record: JournalRecord) => {
+    if (!canWrite(wallet)) return;
     setTxHash(record.tx_hash);
     setTxPhase('WAITING_FOR_FINALITY');
     setMessage('');
     try {
       const api = await import('./contract');
-      const id = await api.reconcileWrite(record);
+      const id = await api.reconcileWrite(record, lifecycle.current.signal);
       setPending(loadJournal(localStorage).filter((item) => item.status === 'SUBMITTED' || item.status === 'RECONCILE'));
       setTxPhase('SUCCESS');
-      if (id) { setGameId(String(id)); setGame(await api.readGame(id)); }
+      if (id) { setGameId(String(id)); setGame(await api.readGame(id, lifecycle.current.signal)); }
     } catch (error) {
       setTxPhase('RECONCILIATION_REQUIRED');
       setMessage(error instanceof Error ? error.message : 'Reconciliation is not complete yet.');
@@ -398,7 +412,7 @@ export default function App() {
                 <button
                   type="submit"
                   className="btn-create"
-                  disabled={wallet.phase !== 'CONNECTED' || !contractAddress || !/^0x[0-9a-fA-F]{40}$/.test(opponent)}
+                  disabled={!writesEnabled || !contractAddress || !/^0x[0-9a-fA-F]{40}$/.test(opponent)}
                 >
                   Create game
                 </button>
@@ -537,6 +551,7 @@ export default function App() {
                   {game.phase === 'INVITED' && actor === 'B' && (
                     <button
                       className="btn-action primary"
+                      disabled={!writesEnabled}
                       onClick={() => void transact('join_game', [BigInt(game.id), BigInt(game.revision)])}
                     >
                       Join game
@@ -544,13 +559,13 @@ export default function App() {
                   )}
                   <button
                     className="btn-action primary"
-                    disabled={!canPlay || word.length < 2}
+                    disabled={!writesEnabled || !canPlay || word.length < 2}
                     onClick={() => void transact('play_word', [BigInt(game.id), word, BigInt(game.domain.turn), BigInt(game.revision)])}
                   >
                     Play word
                   </button>
                   <button
-                    disabled={!canPlay}
+                    disabled={!writesEnabled || !canPlay}
                     className="btn-action quiet"
                     onClick={() => void transact('pass_turn', [BigInt(game.id), BigInt(game.domain.turn), BigInt(game.revision)])}
                   >
@@ -559,6 +574,7 @@ export default function App() {
                   {game.phase === 'FROZEN' && (
                     <button
                       className="btn-action evaluate"
+                      disabled={!writesEnabled}
                       onClick={() => void transact('evaluate_move', [BigInt(game.id), BigInt(game.revision)])}
                     >
                       Evaluate
@@ -567,6 +583,7 @@ export default function App() {
                   {game.phase === 'UNRESOLVED' && (
                     <button
                       className="btn-action retry"
+                      disabled={!writesEnabled}
                       onClick={() => void transact('retry_move', [BigInt(game.id), BigInt(game.revision)])}
                     >
                       Retry
@@ -575,6 +592,7 @@ export default function App() {
                   {game.phase !== 'DONE' && actor !== 'OBSERVER' && (
                     <button
                       className="btn-action danger quiet"
+                      disabled={!writesEnabled}
                       onClick={() => void transact('resign_game', [BigInt(game.id), BigInt(game.revision)])}
                     >
                       Resign
@@ -642,7 +660,7 @@ export default function App() {
                   </div>
                 )}
                 {pending.map((record) => (
-                  <button key={record.reservation} type="button" className="tx-copy-btn" onClick={() => void reconcile(record)}>
+                  <button key={record.reservation} type="button" className="tx-copy-btn" disabled={!writesEnabled} onClick={() => void reconcile(record)}>
                     Reconcile {short(record.tx_hash)}
                   </button>
                 ))}

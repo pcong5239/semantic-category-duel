@@ -229,7 +229,9 @@ class SemanticCategoryDuel(gl.contract.Contract):
         )
 
         def leader() -> dict[str, object]:
-            return validate_result(gl.nondet.exec_prompt(prompt, response_format="json"))
+            # Keep the wire text so duplicate JSON keys cannot be normalized away
+            # before the contract's exact parser validates them.
+            return validate_result(gl.nondet.exec_prompt(prompt, response_format="text"))
 
         def validator(proposed: object) -> bool:
             if not isinstance(proposed, gl.vm.Return):
