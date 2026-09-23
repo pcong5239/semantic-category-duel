@@ -46,7 +46,9 @@ No natural `UNKNOWN` occurred, so no transaction was manufactured to force a non
 
 ## Frontend release evidence
 
-The production URL will be added after the exact public revision is deployed and verified. The final browser run must demonstrate wallet selection, account/chain guards, create/load/join/play/evaluate/pass/resign, conditional retry only after a natural `UNKNOWN`, transaction recovery without resubmission, authoritative readback, clean console output, responsive layout and measured request budgets.
+Production URL: [https://semantic-category-duel.vercel.app](https://semantic-category-duel.vercel.app). The production deployment is `READY`, returns HTTP `200`, renders the expected product title and contains the reviewed Studio contract address in its built application bundle.
+
+The final browser run must demonstrate wallet selection, account/chain guards, create/load/join/play/evaluate/pass/resign, conditional retry only after a natural `UNKNOWN`, transaction recovery without resubmission, authoritative readback, clean console output, responsive layout and measured request budgets.
 
 Per explicit journey, the implementation caps contract/provider activity at: game detail `2` requests, unknown-chain wallet connection `7` provider calls, create `9` RPC calls / `1` transaction, another game write `7` / `1`, create reconciliation `7` / `0`, and other reconciliation `5` / `0`. There is no hidden polling.
 

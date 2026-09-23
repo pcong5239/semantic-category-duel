@@ -4,11 +4,10 @@ Semantic Category Duel is a two-player, six-turn word-chain game on GenLayer. De
 
 ## Verified release
 
+- [Live application](https://semantic-category-duel.vercel.app)
 - [Studio Next contract](https://explorer-studio-dev.genlayer.com/address/0x1C6Ce54fA8Fd3A99bf59c8823252Ac5bd0d5bEf1)
 - [Deployment and recovery details](DEPLOYMENT.md)
 - [Verification record](VERIFICATION.md)
-
-The production web link is added only after the exact public revision is deployed and verified; no preview or unverified URL is advertised here.
 
 ## Trust problem and why GenLayer
 
