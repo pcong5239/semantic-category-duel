@@ -1,10 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assertOperationReadback, createNonce, decodeJournalArgs, encodeAddress, normalizeAddress, operationArgsHash, readGame, requirePositiveCaseId, verifyReconcileTransaction, waitForFinality, withReconcileSlot, writeWithEstimatedFees } from '../src/contract';
+import { assertOperationReadback, createNonce, decodeJournalArgs, encodeAddress, encodeContractArgs, normalizeAddress, operationArgsHash, readGame, requirePositiveCaseId, verifyReconcileTransaction, waitForFinality, withReconcileSlot, writeWithEstimatedFees } from '../src/contract';
 
 const finalized = { statusName: 'FINALIZED', txExecutionResultName: 'FINISHED_WITH_RETURN' };
 
 it('encodes EVM addresses as address calldata rather than strings', () => {
   expect([...encodeAddress(`0x${'12'.repeat(20)}`).bytes]).toEqual(Array(20).fill(0x12));
+});
+
+it('encodes every Address ABI position without mutating ordinary arguments', () => {
+  const address = `0x${'34'.repeat(20)}`;
+  const bytes = (value: unknown) => [...(value as { bytes: Uint8Array }).bytes];
+  expect(bytes(encodeContractArgs('create_game', ['nonce', address, 'ANIMAL', 'a'])[1])).toEqual(Array(20).fill(0x34));
+  expect(bytes(encodeContractArgs('get_id_by_nonce', [address, 'nonce'])[0])).toEqual(Array(20).fill(0x34));
+  expect(bytes(encodeContractArgs('list_actor', [address, 0n, 4n])[0])).toEqual(Array(20).fill(0x34));
+  expect(encodeContractArgs('join_game', [3n, 1n])).toEqual([3n, 1n]);
 });
 
 describe('bounded finality polling', () => {

@@ -29,7 +29,7 @@ export async function readGame(id: bigint, signal?: AbortSignal): Promise<Game |
 }
 
 export async function idByNonce(creator: Address, nonce: string, signal?: AbortSignal): Promise<bigint> {
-  const value = await rpcBudget.request({ rowId: 'nonce-readback', key: `${studioDevnet.id}:${contractAddress}:get_id_by_nonce:${creator}:${nonce}`, signal, call: () => readClient.readContract({ address: contractAddress, functionName: 'get_id_by_nonce', args: [creator, nonce] }) });
+  const value = await rpcBudget.request({ rowId: 'nonce-readback', key: `${studioDevnet.id}:${contractAddress}:get_id_by_nonce:${creator}:${nonce}`, signal, call: () => readClient.readContract({ address: contractAddress, functionName: 'get_id_by_nonce', args: encodeContractArgs('get_id_by_nonce', [creator, nonce]) }) });
   return BigInt(String(value));
 }
 
@@ -63,6 +63,17 @@ export function normalizeAddress(value: string): Address {
 
 export function encodeAddress(value: Address): CalldataAddress {
   return new CalldataAddress(Uint8Array.from(value.slice(2).match(/../g)!.map((byte) => Number.parseInt(byte, 16))));
+}
+
+const addressArgPositions: Record<string, readonly number[]> = {
+  create_game: [1],
+  get_id_by_nonce: [0],
+  list_actor: [0],
+};
+
+export function encodeContractArgs(method: string, args: Calldata[]) {
+  const positions = addressArgPositions[method] ?? [];
+  return args.map((arg, index) => positions.includes(index) ? encodeAddress(normalizeAddress(String(arg))) : arg);
 }
 
 const delay = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
@@ -143,9 +154,7 @@ export async function writeAndVerify(input: { provider: Eip1193; account: Addres
   let hash: `0x${string}` | undefined;
   try {
     input.onPhase('WAITING_FOR_WALLET');
-    const wireArgs = input.method === 'create_game'
-      ? input.args.map((arg, index) => index === 1 ? encodeAddress(String(arg) as Address) : arg)
-      : input.args;
+    const wireArgs = encodeContractArgs(input.method, input.args);
     const transaction = { address: contractAddress, functionName: input.method, args: wireArgs, value: 0n };
     hash = await writeWithEstimatedFees(client, transaction) as `0x${string}`;
     await updateJournal(localStorage, journal.reservation, { tx_hash: hash, status: 'SUBMITTED' });
