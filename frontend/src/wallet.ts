@@ -15,21 +15,33 @@ const supported = (name: string, rdns = ''): WalletName | undefined => {
 };
 
 export function discoverLegacy(win: Window & typeof globalThis): WalletOption[] {
-  const source = (win as unknown as { ethereum?: Eip1193 & { providers?: Eip1193[]; isMetaMask?: boolean; isOkxWallet?: boolean; isRabby?: boolean } }).ethereum;
-  if (!source) return [];
-  const providers = source.providers?.length ? source.providers : [source];
+  const walletWindow = win as unknown as {
+    ethereum?: Eip1193 & { providers?: Eip1193[] };
+    okxwallet?: Eip1193 | { ethereum?: Eip1193 };
+    rabby?: Eip1193 | { ethereum?: Eip1193 };
+  };
+  const injected = walletWindow.ethereum;
+  const unwrap = (value: Eip1193 | { ethereum?: Eip1193 } | undefined) =>
+    value && 'request' in value ? value as Eip1193 : value?.ethereum;
+  const explicit = [unwrap(walletWindow.okxwallet), unwrap(walletWindow.rabby)].filter((item): item is Eip1193 => Boolean(item?.request));
+  const providers = injected?.providers?.length ? [...injected.providers, ...explicit] : explicit.length ? explicit : injected ? [injected] : [];
   const seen = new Set<Eip1193>();
+  const names = new Set<WalletName>();
   return providers.flatMap((provider, index) => {
     if (seen.has(provider)) return [];
     seen.add(provider);
-    const flags = provider as Eip1193 & { isMetaMask?: boolean; isOkxWallet?: boolean; isRabby?: boolean };
-    const name = flags.isRabby ? 'Rabby' : flags.isOkxWallet ? 'OKX Wallet' : flags.isMetaMask ? 'MetaMask' : undefined;
-    return name ? [{ id: `legacy-${name}-${index}`, name, provider }] : [];
+    const flags = provider as Eip1193 & { isMetaMask?: boolean; isOkxWallet?: boolean; isOKExWallet?: boolean; isRabby?: boolean };
+    const identities = [flags.isRabby && 'Rabby', (flags.isOkxWallet || flags.isOKExWallet) && 'OKX Wallet', flags.isMetaMask && 'MetaMask'].filter(Boolean) as WalletName[];
+    if (identities.length !== 1 || names.has(identities[0])) return [];
+    names.add(identities[0]);
+    return [{ id: `legacy-${identities[0]}-${index}`, name: identities[0], provider }];
   });
 }
 
-export const availableWallets = (announced: WalletOption[], win: Window & typeof globalThis): WalletOption[] =>
-  announced.length ? announced : discoverLegacy(win);
+export const availableWallets = (announced: WalletOption[], win: Window & typeof globalThis): WalletOption[] => {
+  const announcedNames = new Set(announced.map(({ name }) => name));
+  return mergeOptions(announced, discoverLegacy(win).filter(({ name }) => !announcedNames.has(name)));
+};
 
 export function optionFromAnnouncement(detail: unknown): WalletOption | undefined {
   const value = detail as { info?: { uuid?: string; name?: string; rdns?: string }; provider?: Eip1193 };

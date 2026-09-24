@@ -10,12 +10,18 @@ describe('wallet discovery and canonical session', () => {
     const win = { ethereum: { providers: [metamask, rabby] } } as unknown as Window & typeof globalThis;
     expect(discoverLegacy(win).map((item) => item.name)).toEqual(['MetaMask', 'Rabby']);
   });
-  it('does not mix ambiguous legacy globals into EIP-6963 announcements', () => {
+  it('merges EIP-6963 announcements with distinct explicit legacy wallets', () => {
     const okx = { id: 'okx', name: 'OKX Wallet' as const, provider: provider() };
-    const ambiguous = provider({ isMetaMask: true });
-    const win = { ethereum: ambiguous } as unknown as Window & typeof globalThis;
+    const metamask = provider({ isMetaMask: true });
+    const explicitOkx = provider({ isOkxWallet: true });
+    const win = { ethereum: metamask, okxwallet: explicitOkx } as unknown as Window & typeof globalThis;
+    expect(availableWallets([{ ...okx, name: 'MetaMask', provider: metamask }], win).map((item) => item.name)).toEqual(['MetaMask', 'OKX Wallet']);
     expect(availableWallets([okx], win)).toEqual([okx]);
-    expect(availableWallets([], win).map((item) => item.name)).toEqual(['MetaMask']);
+  });
+  it('fails closed for a legacy provider with conflicting wallet identities', () => {
+    const conflicting = provider({ isMetaMask: true, isOkxWallet: true });
+    const win = { ethereum: conflicting } as unknown as Window & typeof globalThis;
+    expect(discoverLegacy(win)).toEqual([]);
   });
   it('rejects unsupported EIP-6963 announcements', () => expect(optionFromAnnouncement({ info: { uuid: '1', name: 'Other' }, provider: provider() })).toBeUndefined());
   it('deduplicates repeated announcements by uuid or provider identity', () => {

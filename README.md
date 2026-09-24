@@ -72,7 +72,7 @@ python -m pytest -q tests/test_contract.py
 
 On Windows, run the Python suite inside WSL/Linux. Native Windows stdin is not a GenVM calldata stream and can make the direct loader fail before tests execute; the reviewed WSL run passes all `21` contract/runtime tests.
 
-Current reviewed results: frontend `5` files / `35` tests pass; the production build transforms `470` modules; the exact contract source passes `21` contract/runtime tests under WSL/Linux. Reproduce the release claims and live proof matrix from [VERIFICATION.md](VERIFICATION.md).
+Current reviewed results: frontend `5` files / `36` tests pass; the production build transforms `470` modules; the exact contract source passes `21` contract/runtime tests under WSL/Linux. Reproduce the release claims and live proof matrix from [VERIFICATION.md](VERIFICATION.md).
 
 ## Network and wallets
 
