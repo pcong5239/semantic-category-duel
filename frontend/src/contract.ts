@@ -10,6 +10,12 @@ export class WriteError extends Error {
 }
 export const readClient = createClient({ chain: studioDevnet });
 type FinalizedTransaction = Awaited<ReturnType<typeof readClient.waitForFinalization>>;
+type FeeTransaction = Omit<Parameters<typeof readClient.writeContract>[0], 'fees'>;
+
+export async function writeWithEstimatedFees(client: Pick<typeof readClient, 'estimateTransactionFeesForWrite' | 'writeContract'>, transaction: FeeTransaction) {
+  const fees = await client.estimateTransactionFeesForWrite(transaction);
+  return client.writeContract({ ...transaction, fees });
+}
 
 export async function readGame(id: bigint, signal?: AbortSignal): Promise<Game | null> {
   if (id <= 0n) throw new Error('Enter a positive game ID.');
@@ -129,7 +135,8 @@ export async function writeAndVerify(input: { provider: Eip1193; account: Addres
   let hash: `0x${string}` | undefined;
   try {
     input.onPhase('WAITING_FOR_WALLET');
-    hash = await client.writeContract({ address: contractAddress, functionName: input.method, args: input.args, value: 0n }) as `0x${string}`;
+    const transaction = { address: contractAddress, functionName: input.method, args: input.args, value: 0n };
+    hash = await writeWithEstimatedFees(client, transaction) as `0x${string}`;
     await updateJournal(localStorage, journal.reservation, { tx_hash: hash, status: 'SUBMITTED' });
     input.onPhase('SUBMITTED', hash);
     input.onPhase('WAITING_FOR_FINALITY', hash);
