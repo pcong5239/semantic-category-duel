@@ -12,8 +12,8 @@ export const readClient = createClient({ chain: studioDevnet });
 type FinalizedTransaction = Awaited<ReturnType<typeof readClient.waitForFinalization>>;
 type FeeTransaction = Omit<Parameters<typeof readClient.writeContract>[0], 'fees'>;
 
-export async function writeWithEstimatedFees(client: Pick<typeof readClient, 'estimateTransactionFeesForWrite' | 'writeContract'>, transaction: FeeTransaction) {
-  const fees = await client.estimateTransactionFeesForWrite(transaction);
+export async function writeWithEstimatedFees(client: Pick<typeof readClient, 'estimateTransactionFees' | 'writeContract'>, transaction: FeeTransaction) {
+  const fees = await client.estimateTransactionFees();
   return client.writeContract({ ...transaction, fees });
 }
 

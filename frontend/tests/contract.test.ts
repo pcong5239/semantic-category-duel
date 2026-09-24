@@ -7,12 +7,12 @@ describe('bounded finality polling', () => {
   it('estimates and forwards a nonzero fee preset before every write', async () => {
     const fees = { distribution: { leaderAmount: 1n }, feeValue: 1n };
     const client = {
-      estimateTransactionFeesForWrite: vi.fn().mockResolvedValue(fees),
+      estimateTransactionFees: vi.fn().mockResolvedValue(fees),
       writeContract: vi.fn().mockResolvedValue(`0x${'e'.repeat(64)}`),
     };
     const transaction = { address: `0x${'1'.repeat(40)}`, functionName: 'create_game', args: [] };
     await writeWithEstimatedFees(client as never, transaction as never);
-    expect(client.estimateTransactionFeesForWrite).toHaveBeenCalledWith(transaction);
+    expect(client.estimateTransactionFees).toHaveBeenCalledWith();
     expect(client.writeContract).toHaveBeenCalledWith({ ...transaction, fees });
   });
   it('never delegates retry policy to SDK defaults', async () => {
