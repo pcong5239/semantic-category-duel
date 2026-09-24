@@ -14,7 +14,7 @@ describe('wallet discovery and canonical session', () => {
     const okx = { id: 'okx', name: 'OKX Wallet' as const, provider: provider() };
     const metamask = provider({ isMetaMask: true });
     const explicitOkx = provider({ isOkxWallet: true });
-    const win = { ethereum: metamask, okxwallet: explicitOkx } as unknown as Window & typeof globalThis;
+    const win = { ethereum: metamask, okxwallet: { request: async () => { throw new Error('wrapper'); }, ethereum: explicitOkx } } as unknown as Window & typeof globalThis;
     expect(availableWallets([{ ...okx, name: 'MetaMask', provider: metamask }], win).map((item) => item.name)).toEqual(['MetaMask', 'OKX Wallet']);
     expect(availableWallets([okx], win)).toEqual([okx]);
   });

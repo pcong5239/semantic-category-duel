@@ -22,7 +22,7 @@ export function discoverLegacy(win: Window & typeof globalThis): WalletOption[] 
   };
   const injected = walletWindow.ethereum;
   const unwrap = (value: Eip1193 | { ethereum?: Eip1193 } | undefined) =>
-    value && 'request' in value ? value as Eip1193 : value?.ethereum;
+    value && 'ethereum' in value && value.ethereum?.request ? value.ethereum : value && 'request' in value ? value as Eip1193 : undefined;
   const explicit = [unwrap(walletWindow.okxwallet), unwrap(walletWindow.rabby)].filter((item): item is Eip1193 => Boolean(item?.request));
   const providers = injected?.providers?.length ? [...injected.providers, ...explicit] : explicit.length ? explicit : injected ? [injected] : [];
   const seen = new Set<Eip1193>();
