@@ -28,6 +28,9 @@ export function discoverLegacy(win: Window & typeof globalThis): WalletOption[] 
   });
 }
 
+export const availableWallets = (announced: WalletOption[], win: Window & typeof globalThis): WalletOption[] =>
+  announced.length ? announced : discoverLegacy(win);
+
 export function optionFromAnnouncement(detail: unknown): WalletOption | undefined {
   const value = detail as { info?: { uuid?: string; name?: string; rdns?: string }; provider?: Eip1193 };
   const name = supported(value.info?.name ?? '', value.info?.rdns ?? '');

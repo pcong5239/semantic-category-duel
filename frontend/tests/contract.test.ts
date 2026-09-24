@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assertOperationReadback, decodeJournalArgs, normalizeAddress, operationArgsHash, requirePositiveCaseId, verifyReconcileTransaction, waitForFinality, withReconcileSlot } from '../src/contract';
+import { assertOperationReadback, decodeJournalArgs, normalizeAddress, operationArgsHash, readGame, requirePositiveCaseId, verifyReconcileTransaction, waitForFinality, withReconcileSlot } from '../src/contract';
 
 const finalized = { statusName: 'FINALIZED', txExecutionResultName: 'FINISHED_WITH_RETURN' };
 
@@ -55,6 +55,9 @@ describe('bounded finality polling', () => {
 });
 
 describe('authoritative operation readback', () => {
+  it('rejects non-positive game IDs before issuing an RPC request', async () => {
+    await expect(readGame(0n)).rejects.toThrow('Enter a positive game ID.');
+  });
   it('rejects absent, malformed and mismatched historical state', async () => {
     const account = `0x${'1'.repeat(40)}` as const;
     await expect(assertOperationReadback('null', 'create_game', account)).rejects.toThrow('unavailable');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountSessionAction, bindProviderEvents, canWrite, discoverLegacy, mergeOptions, optionFromAnnouncement, walletReducer, initialWallet } from '../src/wallet';
+import { accountSessionAction, availableWallets, bindProviderEvents, canWrite, discoverLegacy, mergeOptions, optionFromAnnouncement, walletReducer, initialWallet } from '../src/wallet';
 
 const provider = (flags: object = {}) => ({ request: async () => [], ...flags });
 describe('wallet discovery and canonical session', () => {
@@ -9,6 +9,13 @@ describe('wallet discovery and canonical session', () => {
     const rabby = provider({ isRabby: true });
     const win = { ethereum: { providers: [metamask, rabby] } } as unknown as Window & typeof globalThis;
     expect(discoverLegacy(win).map((item) => item.name)).toEqual(['MetaMask', 'Rabby']);
+  });
+  it('does not mix ambiguous legacy globals into EIP-6963 announcements', () => {
+    const okx = { id: 'okx', name: 'OKX Wallet' as const, provider: provider() };
+    const ambiguous = provider({ isMetaMask: true });
+    const win = { ethereum: ambiguous } as unknown as Window & typeof globalThis;
+    expect(availableWallets([okx], win)).toEqual([okx]);
+    expect(availableWallets([], win).map((item) => item.name)).toEqual(['MetaMask']);
   });
   it('rejects unsupported EIP-6963 announcements', () => expect(optionFromAnnouncement({ info: { uuid: '1', name: 'Other' }, provider: provider() })).toBeUndefined());
   it('deduplicates repeated announcements by uuid or provider identity', () => {

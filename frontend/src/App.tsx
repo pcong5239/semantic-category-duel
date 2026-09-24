@@ -2,7 +2,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { Calldata } from './contract';
 import { contractAddress } from './config';
 import { terminalTxPhase, type Game, type TxPhase } from './types';
-import { accountSessionAction, bindProviderEvents, canWrite, discoverLegacy, initialWallet, optionFromAnnouncement, STUDIO_CHAIN, walletReducer, type WalletOption } from './wallet';
+import { accountSessionAction, availableWallets, bindProviderEvents, canWrite, initialWallet, optionFromAnnouncement, STUDIO_CHAIN, walletReducer, type WalletOption } from './wallet';
 import { loadJournal, type JournalRecord } from './pending';
 
 const short = (value?: string) => value ? `${value.slice(0, 6)}…${value.slice(-4)}` : '';
@@ -128,7 +128,7 @@ export default function App() {
 
   const openWallet = () => {
     dispatch({ type: 'DISCOVERING' });
-    dispatch({ type: 'DISCOVER', options: [...announced.current, ...discoverLegacy(window)] });
+    dispatch({ type: 'DISCOVER', options: availableWallets(announced.current, window) });
     window.dispatchEvent(new Event('eip6963:requestProvider'));
     dialog.current?.showModal();
   };

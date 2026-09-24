@@ -12,6 +12,7 @@ export const readClient = createClient({ chain: studioDevnet });
 type FinalizedTransaction = Awaited<ReturnType<typeof readClient.waitForFinalization>>;
 
 export async function readGame(id: bigint, signal?: AbortSignal): Promise<Game | null> {
+  if (id <= 0n) throw new Error('Enter a positive game ID.');
   if (!contractAddress) return null;
   const raw = await rpcBudget.request({ rowId: 'game-detail', key: `${studioDevnet.id}:${contractAddress}:get_case:${id}`, signal, call: () => readClient.readContract({ address: contractAddress, functionName: 'get_case', args: [id] }) });
   return raw === 'null' ? null : JSON.parse(String(raw)) as Game;
