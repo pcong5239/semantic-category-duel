@@ -110,6 +110,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (wallet.phase === 'CHOOSER_OPEN' && !dialog.current?.open) dialog.current?.showModal();
+  }, [wallet.phase]);
+
+  useEffect(() => {
     const provider = wallet.selected?.provider;
     if (!provider?.on) return;
     const applySession = async (accounts?: unknown) => {
@@ -130,7 +134,6 @@ export default function App() {
     dispatch({ type: 'DISCOVERING' });
     dispatch({ type: 'DISCOVER', options: availableWallets(announced.current, window) });
     window.dispatchEvent(new Event('eip6963:requestProvider'));
-    dialog.current?.showModal();
   };
 
   const connect = async (option: WalletOption) => {
