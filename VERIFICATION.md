@@ -24,7 +24,7 @@ npm test -- --run
 npm run build
 ```
 
-Reviewed result: frontend `5` files / `37` tests pass, the Vite production build transforms `470` modules, and the WSL/Linux Python run passes `21` contract/runtime tests. The Python suite verifies the current-runtime contract schema and behavior against the exact source above. On Windows, run that suite inside WSL/Linux; native Windows stdin is not a GenVM calldata stream and can fail in the direct loader before test execution.
+Reviewed result: frontend `5` files / `38` tests pass, the Vite production build transforms `470` modules, and the WSL/Linux Python run passes `21` contract/runtime tests. The Python suite verifies the current-runtime contract schema and behavior against the exact source above. On Windows, run that suite inside WSL/Linux; native Windows stdin is not a GenVM calldata stream and can fail in the direct loader before test execution.
 
 ## Live proof matrix
 

@@ -214,9 +214,9 @@ export default function App() {
 
   const createGame = async () => {
     if (!canWrite(wallet) || !wallet.selected || !wallet.account || !/^0x[0-9a-fA-F]{40}$/.test(opponent)) return;
-    const nonce = crypto.randomUUID();
     try {
       const api = await import('./contract');
+      const nonce = api.createNonce();
       const normalizedOpponent = api.normalizeAddress(opponent);
       const result = await api.writeAndVerify({
         provider: wallet.selected.provider,

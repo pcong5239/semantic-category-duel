@@ -8,6 +8,9 @@ import { contractAddress } from './config';
 export class WriteError extends Error {
   constructor(message: string, readonly hash?: `0x${string}`) { super(message); }
 }
+export const createNonce = () => [...crypto.getRandomValues(new Uint8Array(16))].map((value) => value.toString(16).padStart(2, '0')).join('');
+const executionFailure = (receipt: { statusName?: string; resultName?: string; txExecutionResultName?: string }) =>
+  `Execution failed: ${[receipt.statusName, receipt.resultName, receipt.txExecutionResultName].filter(Boolean).join(' / ') || 'unknown result'}`;
 export const readClient = createClient({ chain: studioDevnet });
 type FinalizedTransaction = Awaited<ReturnType<typeof readClient.waitForFinalization>>;
 type FeeTransaction = Omit<Parameters<typeof readClient.writeContract>[0], 'fees'>;
@@ -122,7 +125,7 @@ export async function assertOperationReadback(version: unknown, method: string, 
 
 export async function verifyReconcileTransaction<T>(transaction: FinalizedTransaction, readback: () => Promise<T>, onPhase?: (phase: TxPhase) => void): Promise<T> {
   onPhase?.('VERIFYING_EXECUTION');
-  if (!isSuccessful(transaction)) throw new Error(`Execution failed: ${transaction.statusName} / ${transaction.resultName} / ${transaction.txExecutionResultName}`);
+  if (!isSuccessful(transaction)) throw new Error(executionFailure(transaction));
   onPhase?.('VERIFYING_READBACK');
   return readback();
 }
@@ -142,7 +145,7 @@ export async function writeAndVerify(input: { provider: Eip1193; account: Addres
     input.onPhase('WAITING_FOR_FINALITY', hash);
     const receipt = await waitForFinality(client, hash, input.signal);
     input.onPhase('VERIFYING_EXECUTION', hash);
-    if (!isSuccessful(receipt)) throw new Error(`Execution failed: ${receipt.statusName} / ${receipt.resultName} / ${receipt.txExecutionResultName}`);
+    if (!isSuccessful(receipt)) throw new Error(executionFailure(receipt));
     input.onPhase('VERIFYING_READBACK', hash);
     const id = await verifyReadback(input.method, input.account, input.args, input.id, input.nextRevision, input.signal);
     await updateJournal(localStorage, journal.reservation, { status: 'VERIFIED' });
