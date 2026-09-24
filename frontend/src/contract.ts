@@ -174,6 +174,10 @@ export async function reconcileWrite(record: JournalRecord, signal?: AbortSignal
   if (!record.tx_hash || record.chain !== String(studioDevnet.id) || record.contract.toLowerCase() !== contractAddress.toLowerCase()) throw new Error('RECONCILE_CONTEXT_MISMATCH');
   return withReconcileSlot(async () => {
     const transaction = await waitForFinality(readClient, record.tx_hash as `0x${string}`, signal, [0], 'reconcile-finality');
+    if (!isSuccessful(transaction)) {
+      await updateJournal(localStorage, record.reservation, { status: 'FINALIZED_ERROR' });
+      throw new Error(executionFailure(transaction));
+    }
     const args = decodeJournalArgs(record.method, record.args_json);
     const id = record.method === 'create_game' ? undefined : BigInt(String(args[0]));
     const revision = BigInt(record.pre_revision) + 1n;
