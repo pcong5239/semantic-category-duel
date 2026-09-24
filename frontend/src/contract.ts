@@ -1,5 +1,6 @@
 import { createClient, isSuccessful } from 'genlayer-js';
 import { studioDevnet } from 'genlayer-js/chains';
+import { CalldataAddress } from 'genlayer-js/types';
 import type { Address, Eip1193, Game, TxPhase } from './types';
 import { reserveWrite, updateJournal, type JournalRecord } from './pending';
 import { rpcBudget } from './rpcBudget';
@@ -58,6 +59,10 @@ export function decodeJournalArgs(method: string, encoded: string): Calldata[] {
 export function normalizeAddress(value: string): Address {
   if (!/^0x[0-9a-fA-F]{40}$/.test(value)) throw new Error('Invalid address.');
   return value.toLowerCase() as Address;
+}
+
+export function encodeAddress(value: Address): CalldataAddress {
+  return new CalldataAddress(Uint8Array.from(value.slice(2).match(/../g)!.map((byte) => Number.parseInt(byte, 16))));
 }
 
 const delay = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
@@ -138,7 +143,10 @@ export async function writeAndVerify(input: { provider: Eip1193; account: Addres
   let hash: `0x${string}` | undefined;
   try {
     input.onPhase('WAITING_FOR_WALLET');
-    const transaction = { address: contractAddress, functionName: input.method, args: input.args, value: 0n };
+    const wireArgs = input.method === 'create_game'
+      ? input.args.map((arg, index) => index === 1 ? encodeAddress(String(arg) as Address) : arg)
+      : input.args;
+    const transaction = { address: contractAddress, functionName: input.method, args: wireArgs, value: 0n };
     hash = await writeWithEstimatedFees(client, transaction) as `0x${string}`;
     await updateJournal(localStorage, journal.reservation, { tx_hash: hash, status: 'SUBMITTED' });
     input.onPhase('SUBMITTED', hash);

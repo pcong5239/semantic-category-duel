@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assertOperationReadback, createNonce, decodeJournalArgs, normalizeAddress, operationArgsHash, readGame, requirePositiveCaseId, verifyReconcileTransaction, waitForFinality, withReconcileSlot, writeWithEstimatedFees } from '../src/contract';
+import { assertOperationReadback, createNonce, decodeJournalArgs, encodeAddress, normalizeAddress, operationArgsHash, readGame, requirePositiveCaseId, verifyReconcileTransaction, waitForFinality, withReconcileSlot, writeWithEstimatedFees } from '../src/contract';
 
 const finalized = { statusName: 'FINALIZED', txExecutionResultName: 'FINISHED_WITH_RETURN' };
+
+it('encodes EVM addresses as address calldata rather than strings', () => {
+  expect([...encodeAddress(`0x${'12'.repeat(20)}`).bytes]).toEqual(Array(20).fill(0x12));
+});
 
 describe('bounded finality polling', () => {
   it('estimates and forwards a nonzero fee preset before every write', async () => {
