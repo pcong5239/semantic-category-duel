@@ -76,6 +76,16 @@ export default function App() {
     return () => lifecycle.current.abort(new Error('PAGE_UNMOUNTED'));
   }, []);
 
+  useEffect(() => {
+    if (!['SUCCESS', 'FAILED', 'REJECTED'].includes(txPhase)) return;
+    const timer = window.setTimeout(() => {
+      setTxPhase('IDLE');
+      setTxHash('');
+      setMessage('');
+    }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [txPhase]);
+
   const refresh = async () => {
     if (!gameId) return;
     try {
@@ -252,9 +262,17 @@ export default function App() {
       setTxPhase('SUCCESS');
       if (id) { setGameId(String(id)); setGame(await api.readGame(id, lifecycle.current.signal)); }
     } catch (error) {
-      setTxPhase('RECONCILIATION_REQUIRED');
+      const records = loadJournal(localStorage).filter((item) => item.status === 'SUBMITTED' || item.status === 'RECONCILE');
+      setPending(records);
+      setTxPhase(records.some((item) => item.reservation === record.reservation) ? 'RECONCILIATION_REQUIRED' : 'FAILED');
       setMessage(error instanceof Error ? error.message : 'Reconciliation is not complete yet.');
     }
+  };
+
+  const dismissTransaction = () => {
+    setTxPhase('IDLE');
+    setTxHash('');
+    setMessage('');
   };
 
   return (
@@ -644,6 +662,7 @@ export default function App() {
               role={txPhase === 'FAILED' ? 'alert' : 'status'}
               aria-live="polite"
             >
+              <button type="button" className="tx-dismiss" onClick={dismissTransaction} aria-label="Dismiss transaction status">×</button>
               <span className={terminalTxPhase(txPhase) ? 'stop' : 'spinner'} aria-hidden="true">
                 {txPhase === 'SUCCESS' && '✓'}
                 {['FAILED', 'REJECTED', 'RECONCILIATION_REQUIRED'].includes(txPhase) && '!'}

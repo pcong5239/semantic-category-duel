@@ -1210,6 +1210,21 @@ a {
   animation: slideUp var(--transition-base);
 }
 
+.tx-dismiss {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.65rem;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.tx-dismiss:hover {
+  color: var(--text-main);
+}
+
 .transaction.SUCCESS {
   border-left-color: var(--status-valid);
 }
