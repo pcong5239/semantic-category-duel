@@ -285,6 +285,7 @@ export default function App() {
             <button
               className="wallet connected"
               onClick={() => dispatch({ type: 'DISCONNECT' })}
+              aria-label={`${wallet.selected?.name} connected as ${wallet.account}. Disconnect wallet`}
               title="Click to disconnect wallet"
             >
               <span className="wallet-dot" aria-hidden="true" />
