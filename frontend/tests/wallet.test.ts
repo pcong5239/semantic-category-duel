@@ -67,4 +67,8 @@ describe('wallet discovery and canonical session', () => {
     expect(canWrite(recovered)).toBe(true);
     expect(await accountSessionAction({ request: async () => '0xf22d' }, [])).toEqual({ type: 'DISCONNECT' });
   });
+  it('keeps the just-approved account when a provider briefly returns no accounts', async () => {
+    const session = await accountSessionAction({ request: async () => '0xf22d' }, [], ['0xABC']);
+    expect(session).toEqual({ type: 'CONNECTED', account: '0xabc', chain: '0xf22d' });
+  });
 });

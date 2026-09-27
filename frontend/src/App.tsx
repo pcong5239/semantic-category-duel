@@ -165,7 +165,7 @@ export default function App() {
         }
       }
       const currentAccounts = await option.provider.request({ method: 'eth_accounts' });
-      const session = await accountSessionAction(option.provider, currentAccounts);
+      const session = await accountSessionAction(option.provider, currentAccounts, accounts);
       dispatch(session);
       if (session.type !== 'CONNECTED') return;
       dialog.current?.close();

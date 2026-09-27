@@ -66,8 +66,9 @@ export function bindProviderEvents(provider: Eip1193, listeners: Record<string, 
   return () => { for (const [event, listener] of Object.entries(listeners)) provider.removeListener?.(event, listener); };
 }
 
-export async function accountSessionAction(provider: Eip1193, accounts: unknown): Promise<WalletAction> {
-  const account = Array.isArray(accounts) && typeof accounts[0] === 'string' ? accounts[0].toLowerCase() as Address : undefined;
+export async function accountSessionAction(provider: Eip1193, accounts: unknown, fallbackAccounts?: unknown): Promise<WalletAction> {
+  const source = Array.isArray(accounts) && accounts.length ? accounts : fallbackAccounts;
+  const account = Array.isArray(source) && typeof source[0] === 'string' ? source[0].toLowerCase() as Address : undefined;
   if (!account) return { type: 'DISCONNECT' };
   const chain = String(await provider.request({ method: 'eth_chainId' })).toLowerCase();
   return chain === STUDIO_CHAIN ? { type: 'CONNECTED', account, chain } : { type: 'WRONG_CHAIN', chain };
