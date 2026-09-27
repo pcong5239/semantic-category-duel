@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { Calldata } from './contract';
 import { contractAddress } from './config';
-import { terminalTxPhase, type Game, type TxPhase } from './types';
+import { needsSemanticReadbackPolling, terminalTxPhase, type Game, type TxPhase } from './types';
 import { accountSessionAction, availableWallets, bindProviderEvents, canWrite, initialWallet, optionFromAnnouncement, STUDIO_CHAIN, walletReducer, type WalletOption } from './wallet';
 import { loadJournal, type JournalRecord } from './pending';
 
@@ -275,6 +275,20 @@ export default function App() {
     const timer = window.setTimeout(() => void reconcile(record), 3000);
     return () => window.clearTimeout(timer);
   }, [pending, txPhase]);
+
+  useEffect(() => {
+    if (!gameId || !needsSemanticReadbackPolling(game)) return;
+    let active = true;
+    const poll = window.setInterval(async () => {
+      try {
+        const latest = await (await import('./contract')).readGame(BigInt(gameId), lifecycle.current.signal);
+        if (active) setGame(latest);
+      } catch {
+        // Keep the last authoritative state visible and retry on the next interval.
+      }
+    }, 5000);
+    return () => { active = false; window.clearInterval(poll); };
+  }, [gameId, game?.phase]);
 
   const dismissTransaction = () => {
     setTxPhase('IDLE');
