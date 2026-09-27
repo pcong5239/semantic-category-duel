@@ -3,8 +3,8 @@ import { terminalTxPhase, type TxPhase } from '../src/types';
 
 describe('transaction indicator', () => {
   it('spins only while the operation can still progress automatically', () => {
-    const terminal: TxPhase[] = ['SUCCESS', 'REJECTED', 'FAILED', 'RECONCILIATION_REQUIRED'];
-    const pending: TxPhase[] = ['WAITING_FOR_WALLET', 'SUBMITTED', 'WAITING_FOR_FINALITY', 'VERIFYING_EXECUTION', 'VERIFYING_READBACK'];
+    const terminal: TxPhase[] = ['SUCCESS', 'REJECTED', 'FAILED'];
+    const pending: TxPhase[] = ['WAITING_FOR_WALLET', 'SUBMITTED', 'WAITING_FOR_FINALITY', 'VERIFYING_EXECUTION', 'VERIFYING_READBACK', 'RECONCILIATION_REQUIRED'];
     expect(terminal.every(terminalTxPhase)).toBe(true);
     expect(pending.some(terminalTxPhase)).toBe(false);
   });

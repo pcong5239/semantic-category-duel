@@ -17,7 +17,7 @@ const phaseCopy: Record<TxPhase, string> = {
   SUCCESS: 'Action verified',
   REJECTED: 'Wallet request rejected',
   FAILED: 'Transaction failed',
-  RECONCILIATION_REQUIRED: 'Reconciliation required',
+  RECONCILIATION_REQUIRED: 'Finality delayed — checking automatically',
 };
 
 function WalletBrandIcon({ name }: { name: string }) {
@@ -268,6 +268,14 @@ export default function App() {
       setMessage(error instanceof Error ? error.message : 'Reconciliation is not complete yet.');
     }
   };
+
+  useEffect(() => {
+    if (txPhase !== 'RECONCILIATION_REQUIRED' || !writesEnabled) return;
+    const record = pending.at(-1);
+    if (!record) return;
+    const timer = window.setTimeout(() => void reconcile(record), 3000);
+    return () => window.clearTimeout(timer);
+  }, [pending, txPhase, writesEnabled]);
 
   const dismissTransaction = () => {
     setTxPhase('IDLE');
@@ -665,7 +673,7 @@ export default function App() {
               <button type="button" className="tx-dismiss" onClick={dismissTransaction} aria-label="Dismiss transaction status">×</button>
               <span className={terminalTxPhase(txPhase) ? 'stop' : 'spinner'} aria-hidden="true">
                 {txPhase === 'SUCCESS' && '✓'}
-                {['FAILED', 'REJECTED', 'RECONCILIATION_REQUIRED'].includes(txPhase) && '!'}
+                {['FAILED', 'REJECTED'].includes(txPhase) && '!'}
               </span>
               <div className="tx-details">
                 <span className="tx-phase-label">{txPhase.replace(/_/g, ' ')}</span>
@@ -683,9 +691,9 @@ export default function App() {
                     </button>
                   </div>
                 )}
-                {pending.map((record) => (
+                {txPhase === 'RECONCILIATION_REQUIRED' && pending.map((record) => (
                   <button key={record.reservation} type="button" className="tx-copy-btn" disabled={!writesEnabled} onClick={() => void reconcile(record)}>
-                    Reconcile {short(record.tx_hash)}
+                    Retry now {short(record.tx_hash)}
                   </button>
                 ))}
               </div>

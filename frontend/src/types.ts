@@ -1,7 +1,7 @@
 export type Address = `0x${string}`;
 
 export type TxPhase = 'IDLE' | 'WAITING_FOR_WALLET' | 'SUBMITTED' | 'WAITING_FOR_FINALITY' | 'VERIFYING_EXECUTION' | 'VERIFYING_READBACK' | 'SUCCESS' | 'REJECTED' | 'FAILED' | 'RECONCILIATION_REQUIRED';
-export const terminalTxPhase = (phase: TxPhase) => ['SUCCESS', 'REJECTED', 'FAILED', 'RECONCILIATION_REQUIRED'].includes(phase);
+export const terminalTxPhase = (phase: TxPhase) => ['SUCCESS', 'REJECTED', 'FAILED'].includes(phase);
 
 export type Move = {
   turn: number;
