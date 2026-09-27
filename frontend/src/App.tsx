@@ -251,7 +251,6 @@ export default function App() {
   };
 
   const reconcile = async (record: JournalRecord) => {
-    if (!canWrite(wallet)) return;
     setTxHash(record.tx_hash);
     setTxPhase('WAITING_FOR_FINALITY');
     setMessage('');
@@ -270,12 +269,12 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (txPhase !== 'RECONCILIATION_REQUIRED' || !writesEnabled) return;
+    if (txPhase !== 'RECONCILIATION_REQUIRED') return;
     const record = pending.at(-1);
     if (!record) return;
     const timer = window.setTimeout(() => void reconcile(record), 3000);
     return () => window.clearTimeout(timer);
-  }, [pending, txPhase, writesEnabled]);
+  }, [pending, txPhase]);
 
   const dismissTransaction = () => {
     setTxPhase('IDLE');
@@ -692,7 +691,7 @@ export default function App() {
                   </div>
                 )}
                 {txPhase === 'RECONCILIATION_REQUIRED' && pending.map((record) => (
-                  <button key={record.reservation} type="button" className="tx-copy-btn" disabled={!writesEnabled} onClick={() => void reconcile(record)}>
+                  <button key={record.reservation} type="button" className="tx-copy-btn" onClick={() => void reconcile(record)}>
                     Retry now {short(record.tx_hash)}
                   </button>
                 ))}
